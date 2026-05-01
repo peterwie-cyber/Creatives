@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEON TETRIS</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Subtiele neon achtergrond gloed */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(0,255,255,0.04) 0%, transparent 55%),
+                radial-gradient(ellipse at 80% 20%, rgba(255,0,255,0.04) 0%, transparent 55%);
+            pointer-events: none;
+        }
+
+        #game-container {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 20px;
+        }
+
+        /* Zijpanelen */
+        .panel {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 120px;
+        }
+
+        .panel-box {
+            border: 1px solid rgba(0,255,255,0.25);
+            border-radius: 4px;
+            padding: 10px;
+            background: rgba(0,0,0,0.7);
+            box-shadow: 0 0 8px rgba(0,255,255,0.08);
+        }
+
+        .panel-title {
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: #0ff;
+            text-shadow: 0 0 8px #0ff;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .score-label {
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: rgba(0,255,255,0.6);
+            text-align: center;
+            margin-bottom: 3px;
+        }
+
+        .score-value {
+            font-size: 20px;
+            color: #fff;
+            text-shadow: 0 0 10px #0ff;
+            text-align: center;
+        }
+
+        /* Level voortgangsbalk */
+        #level-bar-wrap {
+            width: 100%;
+            height: 4px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 2px;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+        #level-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #0ff, #f0f);
+            box-shadow: 0 0 6px #0ff;
+            border-radius: 2px;
+            transition: width 0.4s ease;
+        }
+
+        /* Spelbord */
+        #board-wrap { position: relative; }
+
+        #board {
+            display: block;
+            border: 2px solid #0ff;
+            box-shadow: 0 0 24px #0ff, 0 0 50px rgba(0,255,255,0.25),
+                        inset 0 0 20px rgba(0,255,255,0.04);
+        }
+
+        .mini-canvas { display: block; margin: 0 auto; }
+
+        /* Overlay (start / pauze / game over) */
+        #overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.88);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 18px;
+            z-index: 10;
+        }
+
+        #overlay h1 {
+            font-size: 34px;
+            color: #0ff;
+            text-shadow: 0 0 20px #0ff, 0 0 50px #0ff;
+            letter-spacing: 8px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.55; }
+        }
+
+        #overlay-sub {
+            color: rgba(255,255,255,0.65);
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-align: center;
+        }
+
+        #overlay-keys {
+            font-size: 10px;
+            color: rgba(255,255,255,0.35);
+            line-height: 1.8;
+            text-align: center;
+        }
+
+        .neon-btn {
+            background: transparent;
+            border: 2px solid #0ff;
+            color: #0ff;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            letter-spacing: 4px;
+            padding: 11px 28px;
+            cursor: pointer;
+            text-shadow: 0 0 8px #0ff;
+            box-shadow: 0 0 14px rgba(0,255,255,0.25);
+            transition: all 0.15s;
+            border-radius: 2px;
+        }
+        .neon-btn:hover {
+            background: rgba(0,255,255,0.1);
+            box-shadow: 0 0 28px rgba(0,255,255,0.55);
+        }
+
+        /* Highscorelijst */
+        .hs-entry {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            padding: 3px 0;
+            font-size: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .hs-entry:first-child .hs-score {
+            color: #ff0;
+            text-shadow: 0 0 6px #ff0;
+        }
+        .hs-score { color: rgba(255,255,255,0.8); }
+        .hs-lvl   { color: rgba(255,255,255,0.35); }
+
+        /* Touch knoppen */
+        #touch-controls {
+            display: none;
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .touch-row { display: flex; gap: 8px; }
+        .touch-btn {
+            width: 58px;
+            height: 58px;
+            background: rgba(0,255,255,0.07);
+            border: 1.5px solid rgba(0,255,255,0.45);
+            border-radius: 8px;
+            color: #0ff;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        .touch-btn:active { background: rgba(0,255,255,0.25); }
+        .touch-btn.wide { width: 124px; font-size: 12px; letter-spacing: 2px; }
+
+        @media (max-width: 700px), (pointer: coarse) {
+            #touch-controls { display: flex; }
+        }
+
+        /* Muziekknop */
+        #music-btn {
+            position: fixed;
+            top: 14px;
+            right: 14px;
+            background: transparent;
+            border: 1px solid rgba(0,255,255,0.35);
+            color: #0ff;
+            font-size: 18px;
+            width: 38px;
+            height: 38px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+        #music-btn:hover { background: rgba(0,255,255,0.12); }
+        #music-btn.muted { opacity: 0.35; }
+
+        /* Lijn-clear flits */
+        @keyframes flash {
+            0%   { filter: brightness(1); }
+            40%  { filter: brightness(2.5) saturate(2); }
+            100% { filter: brightness(1); }
+        }
+        .flashing { animation: flash 0.28s ease; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+
+    <!-- Linker paneel: Hold + Score + Highscores -->
+    <div class="panel">
+        <div class="panel-box">
+            <div class="panel-title">HOLD</div>
+            <canvas id="hold-canvas" class="mini-canvas" width="100" height="90"></canvas>
+        </div>
+        <div class="panel-box">
+            <div class="score-label">SCORE</div>
+            <div class="score-value" id="score-display">0</div>
+        </div>
+        <div class="panel-box">
+            <div class="score-label">LEVEL</div>
+            <div class="score-value" id="level-display">1</div>
+            <div id="level-bar-wrap"><div id="level-bar"></div></div>
+        </div>
+        <div class="panel-box">
+            <div class="score-label">LIJNEN</div>
+            <div class="score-value" id="lines-display">0</div>
+        </div>
+        <div class="panel-box">
+            <div class="panel-title">HIGHSCORES</div>
+            <div id="hs-list"></div>
+        </div>
+    </div>
+
+    <!-- Spelbord -->
+    <div id="board-wrap">
+        <canvas id="board" width="300" height="600"></canvas>
+        <div id="overlay">
+            <h1 id="overlay-title">TETRIS</h1>
+            <div id="overlay-sub">NEON EDITION</div>
+            <button class="neon-btn" id="overlay-btn">SPELEN</button>
+            <div id="overlay-keys">
+                ← → &nbsp;Bewegen &nbsp;|&nbsp; ↑ &nbsp;Draaien<br>
+                ↓ &nbsp;Zacht vallen &nbsp;|&nbsp; SPACE &nbsp;Hard drop<br>
+                C &nbsp;Hold &nbsp;|&nbsp; P &nbsp;Pauze
+            </div>
+        </div>
+    </div>
+
+    <!-- Rechter paneel: Volgende 4 stukken -->
+    <div class="panel">
+        <div class="panel-box">
+            <div class="panel-title">NEXT</div>
+            <canvas id="next-canvas" class="mini-canvas" width="100" height="360"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<!-- Touch bediening -->
+<div id="touch-controls">
+    <div class="touch-row">
+        <div class="touch-btn" id="t-rotate">↑</div>
+    </div>
+    <div class="touch-row">
+        <div class="touch-btn" id="t-left">←</div>
+        <div class="touch-btn" id="t-down">↓</div>
+        <div class="touch-btn" id="t-right">→</div>
+    </div>
+    <div class="touch-row">
+        <div class="touch-btn" id="t-hold">HOLD</div>
+        <div class="touch-btn wide" id="t-drop">DROP</div>
+    </div>
+</div>
+
+<button id="music-btn" title="Muziek aan/uit">♪</button>
+
+<script>
+// ─────────────────────────────────────────────
+// CONSTANTEN
+// ─────────────────────────────────────────────
+
+const COLS = 10;       // Breedte bord in cellen
+const ROWS = 20;       // Hoogte bord in cellen
+const CELL = 30;       // Celgrootte in pixels
+const NEXT_COUNT = 4;  // Hoeveel volgende stukken te tonen
+
+// Neonkleuren per stuktype
+const COLOR = {
+    I: '#00ffff',
+    O: '#ffff00',
+    T: '#ff00ff',
+    S: '#00ff88',
+    Z: '#ff3355',
+    J: '#4488ff',
+    L: '#ff8800',
+};
+
+// Vormen (als 2D rasters met 1=gevuld, 0=leeg)
+const SHAPE = {
+    I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    O: [[1,1],[1,1]],
+    T: [[0,1,0],[1,1,1],[0,0,0]],
+    S: [[0,1,1],[1,1,0],[0,0,0]],
+    Z: [[1,1,0],[0,1,1],[0,0,0]],
+    J: [[1,0,0],[1,1,1],[0,0,0]],
+    L: [[0,0,1],[1,1,1],[0,0,0]],
+};
+
+// Punten voor 1, 2, 3 of 4 lijnen tegelijk wissen
+const LINE_POINTS = [0, 100, 300, 500, 800];
+
+// Valsnelheid per level (milliseconden per stap), level 1..10
+const SPEEDS = [800, 680, 560, 450, 350, 260, 200, 150, 110, 75];
+
+// ─────────────────────────────────────────────
+// CANVAS CONTEXTEN
+// ─────────────────────────────────────────────
+const boardCvs  = document.getElementById('board');
+const ctx       = boardCvs.getContext('2d');
+const holdCvs   = document.getElementById('hold-canvas');
+const holdCtx   = holdCvs.getContext('2d');
+const nextCvs   = document.getElementById('next-canvas');
+const nextCtx   = nextCvs.getContext('2d');
+
+// ─────────────────────────────────────────────
+// SPELSTATUS
+// ─────────────────────────────────────────────
+let board        = [];      // 2D raster: null of kleurstring
+let current      = null;    // Huidig vallend stuk { type, matrix, x, y }
+let held         = null;    // Type van opgeslagen stuk, of null
+let canHold      = true;    // Mag je dit beurt houden?
+let bag          = [];      // 7-bag reservoir voor eerlijke verdeling
+let queue        = [];      // Wachtrij van volgende stuktypen
+let score        = 0;
+let level        = 1;
+let linesCleared = 0;
+let running      = false;
+let paused       = false;
+let dropTimer    = null;    // setInterval-handle voor automatisch vallen
+
+// ─────────────────────────────────────────────
+// STUK HELPERS
+// ─────────────────────────────────────────────
+
+// Maak een nieuw stuk-object voor het gegeven type
+function makePiece(type) {
+    const matrix = SHAPE[type].map(r => [...r]); // Diepe kopie
+    return {
+        type,
+        matrix,
+        color: COLOR[type],
+        // Start in het midden bovenaan
+        x: Math.floor(COLS / 2) - Math.floor(matrix[0].length / 2),
+        y: 0,
+    };
+}
+
+// Roteer een matrix 90° met de klok mee
+function rotate90(matrix) {
+    const rows = matrix.length;
+    const cols = matrix[0].length;
+    const result = Array.from({ length: cols }, () => Array(rows).fill(0));
+    for (let r = 0; r < rows; r++)
+        for (let c = 0; c < cols; c++)
+            result[c][rows - 1 - r] = matrix[r][c];
+    return result;
+}
+
+// ─────────────────────────────────────────────
+// BORD LOGICA
+// ─────────────────────────────────────────────
+
+function emptyBoard() {
+    return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+// Controleer of matrix op (x,y) past (geen botsing, niet buiten bord)
+function fits(matrix, x, y) {
+    for (let r = 0; r < matrix.length; r++) {
+        for (let c = 0; c < matrix[r].length; c++) {
+            if (!matrix[r][c]) continue;
+            const nx = x + c, ny = y + r;
+            if (nx < 0 || nx >= COLS || ny >= ROWS) return false;
+            if (ny >= 0 && board[ny][nx]) return false;
+        }
+    }
+    return true;
+}
+
+// Plak het huidige stuk vast op het bord
+function lock() {
+    for (let r = 0; r < current.matrix.length; r++) {
+        for (let c = 0; c < current.matrix[r].length; c++) {
+            if (current.matrix[r][c] && current.y + r >= 0) {
+                board[current.y + r][current.x + c] = current.color;
+            }
+        }
+    }
+    sweepLines();
+    canHold = true;
+    spawnNext();
+}
+
+// Verwijder volle lijnen en reken score
+function sweepLines() {
+    let count = 0;
+    for (let r = ROWS - 1; r >= 0; r--) {
+        if (board[r].every(c => c !== null)) {
+            board.splice(r, 1);
+            board.unshift(Array(COLS).fill(null));
+            count++;
+            r++; // Dezelfde rij-index opnieuw checken
+        }
+    }
+    if (count > 0) {
+        score += LINE_POINTS[count] * level;
+        linesCleared += count;
+        level = Math.min(10, Math.floor(linesCleared / 10) + 1);
+        refreshUI();
+        restartDropTimer();
+        // Knippereffect op het bord
+        boardCvs.classList.add('flashing');
+        boardCvs.addEventListener('animationend', () => boardCvs.classList.remove('flashing'), { once: true });
+    }
+}
+
+// ─────────────────────────────────────────────
+// WACHTRIJ (7-bag systeem voor eerlijke verdeling)
+// ─────────────────────────────────────────────
+const ALL_TYPES = Object.keys(SHAPE);
+
+function refillBag() {
+    // Schud alle 7 stukken en voeg toe aan de bag
+    const shuffled = [...ALL_TYPES].sort(() => Math.random() - 0.5);
+    bag.push(...shuffled);
+}
+
+function fillQueue() {
+    // Zorg dat er altijd genoeg stukken in de wachtrij zitten
+    while (queue.length < NEXT_COUNT + 1) {
+        if (bag.length === 0) refillBag();
+        queue.push(bag.shift());
+    }
+}
+
+function spawnNext() {
+    fillQueue();
+    current = makePiece(queue.shift());
+    // Kan het nieuwe stuk niet plaatsen? Game over.
+    if (!fits(current.matrix, current.x, current.y)) {
+        endGame();
+        return;
+    }
+    renderAll();
+}
+
+// ─────────────────────────────────────────────
+// HOLD
+// ─────────────────────────────────────────────
+function holdCurrent() {
+    if (!canHold) return;
+    if (held === null) {
+        held = current.type;
+        spawnNext();
+    } else {
+        const swap = held;
+        held = current.type;
+        current = makePiece(swap);
+    }
+    canHold = false;
+    renderAll();
+}
+
+// ─────────────────────────────────────────────
+// GHOST PIECE
+// ─────────────────────────────────────────────
+function ghostY() {
+    let gy = current.y;
+    while (fits(current.matrix, current.x, gy + 1)) gy++;
+    return gy;
+}
+
+// ─────────────────────────────────────────────
+// TEKENEN
+// ─────────────────────────────────────────────
+
+// Donker variant van een hex-kleur (voor 3D-effect)
+function darken(hex, amt = 50) {
+    let r = parseInt(hex.slice(1,3),16);
+    let g = parseInt(hex.slice(3,5),16);
+    let b = parseInt(hex.slice(5,7),16);
+    r = Math.max(0, r - amt);
+    g = Math.max(0, g - amt);
+    b = Math.max(0, b - amt);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+// Teken één neon-cel op een canvas
+function drawCell(c, x, y, color, alpha = 1) {
+    const px = x * CELL, py = y * CELL;
+    c.save();
+    c.globalAlpha = alpha;
+
+    // Achtergrond (zwart) zodat transparantie goed werkt
+    c.fillStyle = '#000';
+    c.fillRect(px, py, CELL, CELL);
+
+    // Kleurvlak met gradiënt voor diepte
+    const grad = c.createLinearGradient(px, py, px + CELL, py + CELL);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, darken(color, 55));
+    c.fillStyle = grad;
+    c.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+
+    // Glansrand bovenaan
+    c.fillStyle = 'rgba(255,255,255,0.28)';
+    c.fillRect(px + 2, py + 2, CELL - 4, 3);
+
+    // Neon randgloed
+    c.shadowColor = color;
+    c.shadowBlur = 10;
+    c.strokeStyle = color;
+    c.lineWidth = 0.8;
+    c.strokeRect(px + 1.5, py + 1.5, CELL - 3, CELL - 3);
+
+    c.restore();
+}
+
+// Teken het spelraster + alle vaste blokken
+function drawBoard() {
+    ctx.clearRect(0, 0, boardCvs.width, boardCvs.height);
+
+    // Subtiel raster
+    ctx.strokeStyle = 'rgba(0,255,255,0.04)';
+    ctx.lineWidth = 0.5;
+    for (let r = 0; r < ROWS; r++)
+        for (let col = 0; col < COLS; col++)
+            ctx.strokeRect(col * CELL, r * CELL, CELL, CELL);
+
+    // Vaste blokken
+    for (let r = 0; r < ROWS; r++)
+        for (let col = 0; col < COLS; col++)
+            if (board[r][col]) drawCell(ctx, col, r, board[r][col]);
+}
+
+// Teken de doorzichtige ghost piece
+function drawGhost() {
+    const gy = ghostY();
+    for (let r = 0; r < current.matrix.length; r++) {
+        for (let c = 0; c < current.matrix[r].length; c++) {
+            if (!current.matrix[r][c]) continue;
+            const px = (current.x + c) * CELL;
+            const py = (gy + r) * CELL;
+            ctx.save();
+            ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = current.color;
+            ctx.shadowColor = current.color;
+            ctx.shadowBlur = 6;
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4);
+            ctx.restore();
+        }
+    }
+}
+
+// Teken het huidige vallende stuk
+function drawCurrent() {
+    for (let r = 0; r < current.matrix.length; r++)
+        for (let c = 0; c < current.matrix[r].length; c++)
+            if (current.matrix[r][c] && current.y + r >= 0)
+                drawCell(ctx, current.x + c, current.y + r, current.color);
+}
+
+// Teken een stuk in een mini-canvas (hold of next)
+function drawMini(miniCtx, type, yOffset = 0) {
+    if (!type) return;
+    const m = SHAPE[type];
+    const col = COLOR[type];
+    const cs = 20; // Mini-celgrootte
+    const pw = m[0].length * cs;
+    const ph = m.length * cs;
+    const sx = Math.floor((miniCtx.canvas.width - pw) / 2);
+    const sy = yOffset + Math.floor((85 - ph) / 2);
+
+    for (let r = 0; r < m.length; r++) {
+        for (let c = 0; c < m[r].length; c++) {
+            if (!m[r][c]) continue;
+            const px = sx + c * cs, py = sy + r * cs;
+
+            miniCtx.fillStyle = '#000';
+            miniCtx.fillRect(px, py, cs, cs);
+
+            miniCtx.fillStyle = col;
+            miniCtx.fillRect(px + 1, py + 1, cs - 2, cs - 2);
+
+            miniCtx.fillStyle = 'rgba(255,255,255,0.25)';
+            miniCtx.fillRect(px + 2, py + 2, cs - 4, 2);
+
+            miniCtx.save();
+            miniCtx.shadowColor = col;
+            miniCtx.shadowBlur = 7;
+            miniCtx.strokeStyle = col;
+            miniCtx.lineWidth = 0.6;
+            miniCtx.strokeRect(px + 1.5, py + 1.5, cs - 3, cs - 3);
+            miniCtx.restore();
+        }
+    }
+}
+
+function drawHold() {
+    holdCtx.clearRect(0, 0, holdCvs.width, holdCvs.height);
+    if (!held) return;
+    holdCtx.globalAlpha = canHold ? 1 : 0.35;
+    drawMini(holdCtx, held);
+    holdCtx.globalAlpha = 1;
+}
+
+function drawNext() {
+    nextCtx.clearRect(0, 0, nextCvs.width, nextCvs.height);
+    for (let i = 0; i < NEXT_COUNT; i++) {
+        if (queue[i]) drawMini(nextCtx, queue[i], i * 90);
+    }
+}
+
+function renderAll() {
+    drawBoard();
+    if (running && !paused && current) {
+        drawGhost();
+        drawCurrent();
+    }
+    drawHold();
+    drawNext();
+}
+
+// ─────────────────────────────────────────────
+// UI BIJWERKEN
+// ─────────────────────────────────────────────
+function refreshUI() {
+    document.getElementById('score-display').textContent = score.toLocaleString('nl-NL');
+    document.getElementById('level-display').textContent = level;
+    document.getElementById('lines-display').textContent = linesCleared;
+    const pct = (linesCleared % 10) * 10;
+    document.getElementById('level-bar').style.width = pct + '%';
+    renderHS();
+}
+
+// ─────────────────────────────────────────────
+// HIGHSCORES (localStorage)
+// ─────────────────────────────────────────────
+let highScores = [];
+
+function loadHS() {
+    try { highScores = JSON.parse(localStorage.getItem('neonTetris_hs') || '[]'); }
+    catch { highScores = []; }
+}
+
+function saveHS() {
+    highScores.push({ score, level });
+    highScores.sort((a, b) => b.score - a.score);
+    highScores = highScores.slice(0, 5);
+    localStorage.setItem('neonTetris_hs', JSON.stringify(highScores));
+}
+
+function renderHS() {
+    const el = document.getElementById('hs-list');
+    el.innerHTML = '';
+    highScores.forEach((h, i) => {
+        const d = document.createElement('div');
+        d.className = 'hs-entry';
+        d.innerHTML = `<span>${i + 1}.</span>
+                       <span class="hs-score">${h.score.toLocaleString('nl-NL')}</span>
+                       <span class="hs-lvl">L${h.level}</span>`;
+        el.appendChild(d);
+    });
+}
+
+// ─────────────────────────────────────────────
+// GAME FLOW
+// ─────────────────────────────────────────────
+function startGame() {
+    board        = emptyBoard();
+    score        = 0;
+    level        = 1;
+    linesCleared = 0;
+    held         = null;
+    canHold      = true;
+    bag          = [];
+    queue        = [];
+    running      = true;
+    paused       = false;
+
+    document.getElementById('overlay').style.display = 'none';
+    fillQueue();
+    spawnNext();
+    restartDropTimer();
+    refreshUI();
+    if (musicOn) startMusic();
+}
+
+function restartDropTimer() {
+    clearInterval(dropTimer);
+    const speed = SPEEDS[Math.min(level - 1, SPEEDS.length - 1)];
+    dropTimer = setInterval(tick, speed);
+}
+
+// Eén automatische val-stap
+function tick() {
+    if (!running || paused) return;
+    if (fits(current.matrix, current.x, current.y + 1)) {
+        current.y++;
+    } else {
+        lock();
+    }
+    renderAll();
+}
+
+function hardDrop() {
+    let dropped = 0;
+    while (fits(current.matrix, current.x, current.y + 1)) {
+        current.y++;
+        dropped++;
+    }
+    score += dropped * 2; // Bonuspunten per rij hard-gedropped
+    lock();
+    renderAll();
+}
+
+function tryRotate() {
+    const rotated = rotate90(current.matrix);
+    // Wall kicks: probeer 0, -1, +1, -2, +2 horizontale verschuiving
+    for (const kick of [0, -1, 1, -2, 2]) {
+        if (fits(rotated, current.x + kick, current.y)) {
+            current.matrix = rotated;
+            current.x += kick;
+            renderAll();
+            return;
+        }
+    }
+}
+
+function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    if (paused) {
+        clearInterval(dropTimer);
+        showOverlay('PAUZE', '', 'DOORGAAN', togglePause);
+        stopMusic();
+    } else {
+        hideOverlay();
+        restartDropTimer();
+        renderAll();
+        if (musicOn) startMusic();
+    }
+}
+
+function endGame() {
+    running = false;
+    clearInterval(dropTimer);
+    stopMusic();
+    saveHS();
+    renderHS();
+    showOverlay('GAME OVER', `Score: ${score.toLocaleString('nl-NL')}`, 'OPNIEUW', startGame);
+}
+
+// ─────────────────────────────────────────────
+// OVERLAY HELPERS
+// ─────────────────────────────────────────────
+function showOverlay(title, sub, btnText, btnAction) {
+    const ov = document.getElementById('overlay');
+    document.getElementById('overlay-title').textContent = title;
+    document.getElementById('overlay-sub').textContent = sub;
+    const btn = document.getElementById('overlay-btn');
+    btn.textContent = btnText;
+    btn.onclick = btnAction;
+    ov.style.display = 'flex';
+}
+function hideOverlay() {
+    document.getElementById('overlay').style.display = 'none';
+}
+
+// ─────────────────────────────────────────────
+// TOETSENBORD
+// ─────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    if (!running || paused) return;
+    switch (e.key) {
+        case 'ArrowLeft':  e.preventDefault();
+            if (fits(current.matrix, current.x - 1, current.y)) { current.x--; renderAll(); }
+            break;
+        case 'ArrowRight': e.preventDefault();
+            if (fits(current.matrix, current.x + 1, current.y)) { current.x++; renderAll(); }
+            break;
+        case 'ArrowDown':  e.preventDefault();
+            if (fits(current.matrix, current.x, current.y + 1)) { current.y++; score++; refreshUI(); renderAll(); }
+            break;
+        case 'ArrowUp':    e.preventDefault(); tryRotate(); break;
+        case ' ':          e.preventDefault(); hardDrop(); break;
+        case 'c': case 'C': holdCurrent(); break;
+        case 'p': case 'P': togglePause(); break;
+    }
+});
+
+// ─────────────────────────────────────────────
+// TOUCH BEDIENING
+// ─────────────────────────────────────────────
+function touchMove(fn) {
+    return () => { if (running && !paused) fn(); };
+}
+
+document.getElementById('t-left')  .addEventListener('click', touchMove(() => {
+    if (fits(current.matrix, current.x - 1, current.y)) { current.x--; renderAll(); }
+}));
+document.getElementById('t-right') .addEventListener('click', touchMove(() => {
+    if (fits(current.matrix, current.x + 1, current.y)) { current.x++; renderAll(); }
+}));
+document.getElementById('t-down')  .addEventListener('click', touchMove(() => {
+    if (fits(current.matrix, current.x, current.y + 1)) { current.y++; renderAll(); }
+}));
+document.getElementById('t-rotate').addEventListener('click', touchMove(tryRotate));
+document.getElementById('t-drop')  .addEventListener('click', touchMove(hardDrop));
+document.getElementById('t-hold')  .addEventListener('click', touchMove(holdCurrent));
+
+// Swipe op het bord zelf
+let swipeX = 0, swipeY = 0;
+boardCvs.addEventListener('touchstart', e => {
+    swipeX = e.touches[0].clientX;
+    swipeY = e.touches[0].clientY;
+    e.preventDefault();
+}, { passive: false });
+
+boardCvs.addEventListener('touchend', e => {
+    if (!running || paused) return;
+    const dx = e.changedTouches[0].clientX - swipeX;
+    const dy = e.changedTouches[0].clientY - swipeY;
+    if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+        tryRotate(); // Tap = draaien
+    } else if (Math.abs(dx) > Math.abs(dy)) {
+        const nx = current.x + (dx > 0 ? 1 : -1);
+        if (fits(current.matrix, nx, current.y)) { current.x = nx; renderAll(); }
+    } else if (dy > 40) {
+        hardDrop(); // Swipe naar beneden = hard drop
+    }
+    e.preventDefault();
+}, { passive: false });
+
+// ─────────────────────────────────────────────
+// MUZIEK — Tetris thema (Korobeiniki) via Web Audio API
+// Gegenereerd met oscillatoren, geen externe bestanden nodig
+// ─────────────────────────────────────────────
+let audioCtx   = null;
+let musicOn    = true;
+let musicTimer = null;
+let noteIdx    = 0;
+let nextBeat   = 0;
+
+const BPM  = 158;
+const BEAT = 60 / BPM; // Seconden per kwartslag
+
+// Melodie als [nootfrequentie Hz, duur in beats]
+// 0 = rust (geen toon)
+const MELODY = [
+    // Deel A
+    [659,1],[494,0.5],[523,0.5],[587,1],[523,0.5],[494,0.5],
+    [440,1],[440,0.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
+    [494,1.5],[523,0.5],[587,1],[659,1],
+    [523,1],[440,1],[440,1],[0,1],
+    // Deel B
+    [0,0.5],[587,1],[698,0.5],[880,1],[784,0.5],[698,0.5],
+    [659,1.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
+    [494,1],[494,0.5],[523,0.5],[587,1],[659,1],
+    [523,1],[440,1],[440,1],[0,1],
+    // Deel A herhaling
+    [659,1],[494,0.5],[523,0.5],[587,1],[523,0.5],[494,0.5],
+    [440,1],[440,0.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
+    [494,1.5],[523,0.5],[587,1],[659,1],
+    [523,1],[440,1],[440,1],[0,1],
+];
+
+function playNote(freq, start, dur) {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.type = 'square'; // Retro 8-bit timbre
+    osc.frequency.setValueAtTime(freq, start);
+
+    // Korte fade-in en fade-out voor zachter geluid
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(0.12, start + 0.01);
+    gain.gain.setValueAtTime(0.12, start + dur - 0.02);
+    gain.gain.linearRampToValueAtTime(0, start + dur);
+
+    osc.start(start);
+    osc.stop(start + dur);
+}
+
+function scheduleNote() {
+    if (!musicOn || !audioCtx) return;
+
+    const [freq, beats] = MELODY[noteIdx];
+    const dur = beats * BEAT;
+
+    if (freq > 0) playNote(freq, nextBeat, dur * 0.92);
+
+    nextBeat += dur;
+    noteIdx = (noteIdx + 1) % MELODY.length;
+
+    // Plan de volgende noot iets vroeger zodat er geen gat valt
+    const delay = (nextBeat - audioCtx.currentTime) * 1000 - 60;
+    musicTimer = setTimeout(scheduleNote, Math.max(0, delay));
+}
+
+function startMusic() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (musicTimer) return; // Al bezig
+    nextBeat = audioCtx.currentTime;
+    scheduleNote();
+}
+
+function stopMusic() {
+    clearTimeout(musicTimer);
+    musicTimer = null;
+}
+
+const musicBtn = document.getElementById('music-btn');
+musicBtn.addEventListener('click', () => {
+    musicOn = !musicOn;
+    musicBtn.classList.toggle('muted', !musicOn);
+    musicBtn.textContent = musicOn ? '♪' : '♪';
+    if (musicOn && running && !paused) startMusic();
+    else stopMusic();
+});
+
+// ─────────────────────────────────────────────
+// INITIALISATIE
+// ─────────────────────────────────────────────
+loadHS();
+renderHS();
+showOverlay('TETRIS', 'NEON EDITION', 'SPELEN', startGame);
+renderAll(); // Toon leeg bord achter de overlay
+</script>
+</body>
+</html>
