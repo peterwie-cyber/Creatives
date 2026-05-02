@@ -249,16 +249,17 @@
         @media (max-width: 560px) {
             body { overflow: hidden; align-items: flex-start; }
 
-            /* Grid: info-strip bovenaan (2 kolommen), bord eronder (vol breedte) */
+            /* Grid: VASTE info-strip van 85px, rest voor het bord */
             #game-container {
                 display: grid;
                 grid-template-areas:
                     "left right"
                     "board board";
                 grid-template-columns: 1fr 1fr;
+                grid-template-rows: 85px 1fr;
                 width: 100%;
+                height: 100dvh;
                 padding: 6px;
-                /* Ruimte voor Dynamic Island (safe-area-inset-top) */
                 padding-top: max(6px, env(safe-area-inset-top));
                 padding-left:  max(6px, env(safe-area-inset-left));
                 padding-right: max(6px, env(safe-area-inset-right));
@@ -266,34 +267,42 @@
                 box-sizing: border-box;
             }
 
-            #panel-left  { grid-area: left;  width: auto; }
-            #panel-right { grid-area: right; width: auto; }
-            #board-wrap  {
-                grid-area: board;
-                display: flex;
-                justify-content: center;
-                align-items: flex-start;
+            /* Linker paneel: HOLD en SCORE naast elkaar in één rij */
+            #panel-left {
+                grid-area: left;
+                width: auto;
+                flex-direction: row;
+                align-items: center;
+                overflow: hidden;
+                gap: 4px;
             }
+            /* Verberg LEVEL, LIJNEN en HIGHSCORES — te veel voor de 85px strip */
+            #panel-left .panel-box:nth-child(n+3) { display: none; }
 
-            /* Highscores verbergen: te veel ruimte op mobiel */
-            #panel-left .panel-box:last-child { display: none; }
+            /* Rechter paneel: clip zodat alleen het eerste volgende stuk zichtbaar is */
+            #panel-right { grid-area: right; width: auto; overflow: hidden; }
+            #panel-right .panel-box { overflow: hidden; max-height: 82px; }
 
-            /* Compacte panelen */
-            .panel       { gap: 4px; }
-            .panel-box   { padding: 6px 5px; }
-            .score-value { font-size: 16px; }
+            /* Bord-wrapper krimpt mee met canvas zodat de overlay correct uitlijnt */
+            #board-wrap { grid-area: board; width: fit-content; margin: 0 auto; }
+
+            /* Canvas-weergavegrootte kleiner (pixel-buffer blijft ongewijzigd) */
+            #hold-canvas { width: 70px; height: 65px; }
+            #next-canvas { width: 80px; }
+
+            .panel-box   { padding: 5px; }
+            .score-value { font-size: 18px; }
             .score-label { font-size: 8px; letter-spacing: 1px; }
-            .panel-title { font-size: 8px; letter-spacing: 2px; }
+            .panel-title { font-size: 9px; letter-spacing: 2px; }
 
-            /* Touch knoppen: groter en boven home-indicator */
+            /* Touch knoppen: groter, boven home-indicator */
             #touch-controls {
                 display: flex;
-                /* Ruimte voor home indicator (safe-area-inset-bottom) */
                 bottom: max(10px, env(safe-area-inset-bottom));
                 gap: 7px;
             }
-            .touch-row  { gap: 7px; }
-            .touch-btn  { width: 66px; height: 66px; font-size: 26px; }
+            .touch-row      { gap: 7px; }
+            .touch-btn      { width: 66px; height: 66px; font-size: 26px; }
             .touch-btn.wide { width: 140px; font-size: 13px; }
 
             /* Muziekknop boven Dynamic Island */
@@ -979,24 +988,19 @@ musicBtn.addEventListener('click', () => {
 // ─────────────────────────────────────────────
 
 function fitBoard() {
-    // Alleen aanpassen op smalle schermen (mobiel)
     if (window.innerWidth > 560) {
         boardCvs.style.width  = '';
         boardCvs.style.height = '';
         return;
     }
-
-    // Beschikbare breedte: schermbreedte minus zijpadding
+    // Breedte: schermbreedte minus zijpadding
     const maxW = window.innerWidth - 14;
-
-    // Beschikbare hoogte: scherm minus info-strip boven minus touch-controls onder
-    const infoEl = document.getElementById('panel-left');
-    // getBoundingClientRect geeft de werkelijke hoogte na layout
-    const infoH  = infoEl.getBoundingClientRect().height + 14;
-    const touchH = 220; // 3 rijen knoppen + home-indicator ruimte
+    // Hoogte: scherm minus safe-area-top-schatting, info-strip en touch-controls
+    // safe area top ≈ 60px (Dynamic Island), info grid-rij = 85px, gap = 12px
+    const infoH  = 157;
+    // touch controls: 3 rijen × 66px + 2 gaps × 7px + home indicator ≈ 230px
+    const touchH = 230;
     const maxH   = window.innerHeight - infoH - touchH;
-
-    // Bereken schaalfactor zodat het bord (300×600) in beide dimensies past
     const scale  = Math.min(maxW / 300, maxH / 600);
     boardCvs.style.width  = Math.round(300 * scale) + 'px';
     boardCvs.style.height = Math.round(600 * scale) + 'px';
