@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>NEON TETRIS</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -244,6 +244,64 @@
             100% { filter: brightness(1); }
         }
         .flashing { animation: flash 0.28s ease; }
+
+        /* ── iPhone / mobiel layout ──────────────────────────────── */
+        @media (max-width: 560px) {
+            body { overflow: hidden; align-items: flex-start; }
+
+            /* Grid: info-strip bovenaan (2 kolommen), bord eronder (vol breedte) */
+            #game-container {
+                display: grid;
+                grid-template-areas:
+                    "left right"
+                    "board board";
+                grid-template-columns: 1fr 1fr;
+                width: 100%;
+                padding: 6px;
+                /* Ruimte voor Dynamic Island (safe-area-inset-top) */
+                padding-top: max(6px, env(safe-area-inset-top));
+                padding-left:  max(6px, env(safe-area-inset-left));
+                padding-right: max(6px, env(safe-area-inset-right));
+                gap: 6px;
+                box-sizing: border-box;
+            }
+
+            #panel-left  { grid-area: left;  width: auto; }
+            #panel-right { grid-area: right; width: auto; }
+            #board-wrap  {
+                grid-area: board;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
+            }
+
+            /* Highscores verbergen: te veel ruimte op mobiel */
+            #panel-left .panel-box:last-child { display: none; }
+
+            /* Compacte panelen */
+            .panel       { gap: 4px; }
+            .panel-box   { padding: 6px 5px; }
+            .score-value { font-size: 16px; }
+            .score-label { font-size: 8px; letter-spacing: 1px; }
+            .panel-title { font-size: 8px; letter-spacing: 2px; }
+
+            /* Touch knoppen: groter en boven home-indicator */
+            #touch-controls {
+                display: flex;
+                /* Ruimte voor home indicator (safe-area-inset-bottom) */
+                bottom: max(10px, env(safe-area-inset-bottom));
+                gap: 7px;
+            }
+            .touch-row  { gap: 7px; }
+            .touch-btn  { width: 66px; height: 66px; font-size: 26px; }
+            .touch-btn.wide { width: 140px; font-size: 13px; }
+
+            /* Muziekknop boven Dynamic Island */
+            #music-btn {
+                top:   max(10px, env(safe-area-inset-top));
+                right: max(10px, env(safe-area-inset-right));
+            }
+        }
     </style>
 </head>
 <body>
@@ -251,7 +309,7 @@
 <div id="game-container">
 
     <!-- Linker paneel: Hold + Score + Highscores -->
-    <div class="panel">
+    <div class="panel" id="panel-left">
         <div class="panel-box">
             <div class="panel-title">HOLD</div>
             <canvas id="hold-canvas" class="mini-canvas" width="100" height="90"></canvas>
@@ -291,7 +349,7 @@
     </div>
 
     <!-- Rechter paneel: Volgende 4 stukken -->
-    <div class="panel">
+    <div class="panel" id="panel-right">
         <div class="panel-box">
             <div class="panel-title">NEXT</div>
             <canvas id="next-canvas" class="mini-canvas" width="100" height="360"></canvas>
@@ -315,6 +373,9 @@
         <div class="touch-btn wide" id="t-drop">DROP</div>
     </div>
 </div>
+
+<!-- Achtergrondmuziek: loop zodat hij blijft herhalen -->
+<audio id="bgm" loop src="Downloads/Momento Contento (Tetris Remix) - GIGI D´AGOSTINO [HB Video Edición] [INNp_rVE69w].mp3"></audio>
 
 <button id="music-btn" title="Muziek aan/uit">♪</button>
 
@@ -888,99 +949,69 @@ boardCvs.addEventListener('touchend', e => {
 }, { passive: false });
 
 // ─────────────────────────────────────────────
-// MUZIEK — Tetris thema (Korobeiniki) via Web Audio API
-// Gegenereerd met oscillatoren, geen externe bestanden nodig
+// MUZIEK — MP3 via HTML Audio element
 // ─────────────────────────────────────────────
-let audioCtx   = null;
-let musicOn    = true;
-let musicTimer = null;
-let noteIdx    = 0;
-let nextBeat   = 0;
+const bgm    = document.getElementById('bgm');
+let musicOn  = true;
 
-const BPM  = 158;
-const BEAT = 60 / BPM; // Seconden per kwartslag
-
-// Melodie als [nootfrequentie Hz, duur in beats]
-// 0 = rust (geen toon)
-const MELODY = [
-    // Deel A
-    [659,1],[494,0.5],[523,0.5],[587,1],[523,0.5],[494,0.5],
-    [440,1],[440,0.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
-    [494,1.5],[523,0.5],[587,1],[659,1],
-    [523,1],[440,1],[440,1],[0,1],
-    // Deel B
-    [0,0.5],[587,1],[698,0.5],[880,1],[784,0.5],[698,0.5],
-    [659,1.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
-    [494,1],[494,0.5],[523,0.5],[587,1],[659,1],
-    [523,1],[440,1],[440,1],[0,1],
-    // Deel A herhaling
-    [659,1],[494,0.5],[523,0.5],[587,1],[523,0.5],[494,0.5],
-    [440,1],[440,0.5],[523,0.5],[659,1],[587,0.5],[523,0.5],
-    [494,1.5],[523,0.5],[587,1],[659,1],
-    [523,1],[440,1],[440,1],[0,1],
-];
-
-function playNote(freq, start, dur) {
-    const osc  = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    osc.type = 'square'; // Retro 8-bit timbre
-    osc.frequency.setValueAtTime(freq, start);
-
-    // Korte fade-in en fade-out voor zachter geluid
-    gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.12, start + 0.01);
-    gain.gain.setValueAtTime(0.12, start + dur - 0.02);
-    gain.gain.linearRampToValueAtTime(0, start + dur);
-
-    osc.start(start);
-    osc.stop(start + dur);
-}
-
-function scheduleNote() {
-    if (!musicOn || !audioCtx) return;
-
-    const [freq, beats] = MELODY[noteIdx];
-    const dur = beats * BEAT;
-
-    if (freq > 0) playNote(freq, nextBeat, dur * 0.92);
-
-    nextBeat += dur;
-    noteIdx = (noteIdx + 1) % MELODY.length;
-
-    // Plan de volgende noot iets vroeger zodat er geen gat valt
-    const delay = (nextBeat - audioCtx.currentTime) * 1000 - 60;
-    musicTimer = setTimeout(scheduleNote, Math.max(0, delay));
-}
+// Zet het volume iets lager zodat muziek het spel niet overstemt
+bgm.volume = 0.6;
 
 function startMusic() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (musicTimer) return; // Al bezig
-    nextBeat = audioCtx.currentTime;
-    scheduleNote();
+    // play() geeft een Promise; fout opvangen zodat het spel nooit crasht
+    bgm.play().catch(() => {});
 }
 
 function stopMusic() {
-    clearTimeout(musicTimer);
-    musicTimer = null;
+    bgm.pause();
 }
 
 const musicBtn = document.getElementById('music-btn');
 musicBtn.addEventListener('click', () => {
     musicOn = !musicOn;
     musicBtn.classList.toggle('muted', !musicOn);
-    musicBtn.textContent = musicOn ? '♪' : '♪';
     if (musicOn && running && !paused) startMusic();
     else stopMusic();
 });
+
+// ─────────────────────────────────────────────
+// SCHERMGROOTTE — past het canvas aan op iPhone
+// ─────────────────────────────────────────────
+
+function fitBoard() {
+    // Alleen aanpassen op smalle schermen (mobiel)
+    if (window.innerWidth > 560) {
+        boardCvs.style.width  = '';
+        boardCvs.style.height = '';
+        return;
+    }
+
+    // Beschikbare breedte: schermbreedte minus zijpadding
+    const maxW = window.innerWidth - 14;
+
+    // Beschikbare hoogte: scherm minus info-strip boven minus touch-controls onder
+    const infoEl = document.getElementById('panel-left');
+    // getBoundingClientRect geeft de werkelijke hoogte na layout
+    const infoH  = infoEl.getBoundingClientRect().height + 14;
+    const touchH = 220; // 3 rijen knoppen + home-indicator ruimte
+    const maxH   = window.innerHeight - infoH - touchH;
+
+    // Bereken schaalfactor zodat het bord (300×600) in beide dimensies past
+    const scale  = Math.min(maxW / 300, maxH / 600);
+    boardCvs.style.width  = Math.round(300 * scale) + 'px';
+    boardCvs.style.height = Math.round(600 * scale) + 'px';
+}
+
+// Herbereken bij roteren of venstergrootte wijzigen
+window.addEventListener('resize', fitBoard);
+window.addEventListener('orientationchange', () => setTimeout(fitBoard, 200));
 
 // ─────────────────────────────────────────────
 // INITIALISATIE
 // ─────────────────────────────────────────────
 loadHS();
 renderHS();
+fitBoard(); // Stel boardgrootte in voor het huidige scherm
 showOverlay('TETRIS', 'NEON EDITION', 'SPELEN', startGame);
 renderAll(); // Toon leeg bord achter de overlay
 </script>
